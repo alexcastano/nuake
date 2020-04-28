@@ -1,5 +1,8 @@
 " autoload/nuake.vim
 
+let s:nuake_job_id = -1
+let s:nuake_last_command = []
+
 " Window management {{{1
 function! nuake#ToggleWindow() abort "{{{2
     let l:nuake_win_nr = bufwinnr(s:NuakeBufNr())
@@ -11,17 +14,46 @@ function! nuake#ToggleWindow() abort "{{{2
     endif
 endfunction
 
+function! nuake#ShowWindow() abort "{{{2
+    let l:nuake_win_nr = bufwinnr(s:NuakeBufNr())
+
+    if l:nuake_win_nr == -1
+        call s:OpenWindow()
+        wincmd p
+        call feedkeys("\<esc>")
+    endif
+endfunction
+
+function! nuake#SendCommand(command) abort "{{{2
+    call nuake#ShowWindow()
+    " adds an empty string to add an 'enter' to the last command
+    let l:command = add(a:command, '')
+    let s:nuake_last_command = l:command
+    call chansend(s:nuake_job_id, l:command)
+endfunction
+
+function! nuake#RepeatLastCommand() abort
+    call nuake#ShowWindow()
+
+    call chansend(s:nuake_job_id, s:nuake_last_command)
+endfunction
+
+function! s:OnExit(...) abort "{{{2
+    let s:nuake_job_id = -1
+endfunction
+
+
 function! s:OpenWindow() abort "{{{2
     let l:nuake_buf_nr = bufnr(s:NuakeBufNr())
 
-    execute  'silent keepalt ' . s:NuakeLook() . 'split'
-
     if l:nuake_buf_nr != -1
+        execute  'silent keepalt ' . s:NuakeLook() . 'split'
         execute  'buffer ' . l:nuake_buf_nr
     else
-        let l:vim_options = has('terminal') ? '++curwin ++kill=kill' : ''
-
-        execute  'terminal' . l:vim_options
+        execute  'silent keepalt ' . s:NuakeLook() . 'new'
+        let l:shell = &shell . ' ' . substitute(&shellcmdflag, '[-/]c', '', '')
+        let l:callbacks = { 'on_exit': function('s:OnExit') }
+        let s:nuake_job_id = termopen(l:shell, l:callbacks)
         call s:InitWindow()
         call s:NuakeBufNr()
     endif
@@ -65,6 +97,7 @@ function! s:CloseWindow() abort "{{{2
             execute l:win_num . 'wincmd w'
         endif
     endif
+    call feedkeys("\<esc>")
 endfunction
 
 function! s:ResizeWindow() abort "{{{2
@@ -135,13 +168,39 @@ function! s:NuakeCloseTab() abort "{{{2
         unlet s:temp_nuake_buf_nr
     endif
 endfunction
+
+function! nuake#opfunc(type)
+  let [l:lnum1, l:col1] = getpos("'[")[1:2]
+  let [l:lnum2, l:col2] = getpos("']")[1:2]
+  let l:lines = getline(l:lnum1, l:lnum2)
+  if a:type ==# 'char'
+    let l:lines[-1] = l:lines[-1][:l:col2 - 1]
+    let l:lines[0] = l:lines[0][l:col1 - 1:]
+  endif
+
+  " let @r = join(l:lines, "\n")
+  call nuake#SendCommand(l:lines)
+endfunction
+
+function! nuake#opfuncselection()
+  let [l:lnum1, l:col1] = getpos("'<")[1:2]
+  let [l:lnum2, l:col2] = getpos("'>")[1:2]
+  if &selection ==# 'exclusive'
+    let l:col2 -= 1
+  endif
+  let l:lines = getline(l:lnum1, l:lnum2)
+  let l:lines[-1] = l:lines[-1][:l:col2 - 1]
+  let l:lines[0] = l:lines[0][l:col1 - 1:]
+  call nuake#SendCommand(l:lines)
+endfunction
+
 "
 " Autocomands {{{1
 augroup nuake_start_insert
     autocmd!
     autocmd FileType,BufEnter *
                 \ if &filetype == 'nuake' && (g:nuake_start_insert == 1) |
-                \ execute 'silent! normal i' |
+                \ execute 'silent! normal! i' |
                 \ endif
 augroup END
 
