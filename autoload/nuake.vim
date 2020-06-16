@@ -78,6 +78,7 @@ function! s:InitWindow() abort "{{{2
     setlocal norelativenumber
     setlocal nofoldenable
     setlocal foldcolumn=0
+    setlocal signcolumn=no
 endfunction
 
 function! s:CloseWindow() abort "{{{2
